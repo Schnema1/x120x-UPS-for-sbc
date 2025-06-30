@@ -1,0 +1,16 @@
+[Unit]
+Description=X120X UPS Monitor
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /home/pi/merged.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
