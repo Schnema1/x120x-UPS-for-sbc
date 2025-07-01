@@ -164,7 +164,7 @@ def display_system_stats(voltage, capacity, charging_enabled, ac_power_state):
     if ac_power_state == 1:
         power_status = f"{GREEN}✓ AC Power: OK! ✓\n               ✓ Power Adapter: OK! ✓{RESET}"
     else:
-        power_status = f"{YELLOW}⚠ Power Loss OR Power Adapter Failure ⚠{RESET}"
+        power_status = f"{RED_BOLD}⚠⚠{RESET} {YELLOW}Power Loss OR Power Adapter Failure{RESET} {RED_BOLD}⚠⚠{RESET}"
     
     # Format display text with centered headers
     print("\n" + "="*50)
@@ -188,13 +188,13 @@ def display_system_stats(voltage, capacity, charging_enabled, ac_power_state):
     
     # Add warning status based on power and battery levels
     if ac_power_state != 1 and capacity and capacity >= 51:
-        print(f"        {YELLOW}⚠ Running on UPS Backup Power - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+        print(f"        {RED_BOLD}⚠⚠{RESET} {YELLOW}Running on UPS Backup Power - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
     elif ac_power_state != 1 and capacity and capacity <= 50 and capacity >= 25:
-        print(f"     {YELLOW}⚠ UPS Power levels approaching critical - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+        print(f"     {RED_BOLD}⚠⚠{RESET} {YELLOW}UPS Power levels approaching critical - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
     elif ac_power_state != 1 and capacity and capacity <= 24 and capacity >= 16:
-        print(f"          {YELLOW}⚠ UPS Power levels critical - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+        print(f"          {RED_BOLD}⚠⚠{RESET} {YELLOW}UPS Power levels critical - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
     elif ac_power_state != 1 and capacity and capacity <= 15:
-        print(f"        {YELLOW}⚠ UPS Power failure imminent - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+        print(f"        {RED_BOLD}⚠⚠{RESET} {YELLOW}UPS Power failure imminent - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
     
     print("="*50 + "\n")
 
