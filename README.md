@@ -1,7 +1,6 @@
 # BTCups - Raspberry Pi UPS Monitoring Script
 
-A comprehensive Python script for monitoring and managing Suptronics X120X series UPS boards on Raspberry Pi 5. This script provides battery monitoring, charging control, and automatic safe shutdown functionality. It is forked from the main repo and enhanced by AI. So is most of this text.
-The script is built to run on bitcoin full nodes with core lightning CLN or lighting labs LND application running. There can be serious loss if the database gets corrupted. Therfore this ups board with the monitoring script can you from a harmful powerloss. It savely shuts down your node, until power is back.
+A comprehensive Python script for monitoring and managing Suptronics X120X series UPS boards on Raspberry Pi 5. This script provides battery monitoring, charging control, and automatic safe shutdown functionality.
 
 ## Features
 
