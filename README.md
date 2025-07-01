@@ -93,8 +93,12 @@ CRITICAL_VOLTAGE = 3.10    # Run voltage lower (risky for Li-ion)
 MAX_CHARGE_VOLTAGE = 4.10   # Maximum charging voltage (V)
 CHARGE_RESUME_VOLTAGE = 4.05 # Resume charging below this voltage (V)
 CHARGE_CONTROL_PIN = 16     # GPIO pin to control charging
-CHARGE_ENABLE_STATE = 1     # GPIO state to enable charging (1 = high, 0 = low)
+CHARGE_ENABLE_STATE = 0     # GPIO state to enable charging (0 = low/enable, 1 = high/disable)
 ```
+
+**Important**: According to the Suptronics manual:
+- `sudo pinctrl set 16 op dl` (drive low) **enables** charging
+- `sudo pinctrl set 16 op dh` (drive high) **disables** charging
 
 ## Running as a Service
 
@@ -192,12 +196,19 @@ The script uses the following GPIO pins:
 - **GPIO 6**: Power Loss Detection (PLD) - Input
 - **GPIO 16**: Charging Control - Output
 
-### Optional Boot Configuration
+### Manual Charging Control
 
-Add to `/boot/firmware/config.txt` for improved charging control:
+You can manually control charging using pinctrl commands:
 
-```
-gpio=16=pu
+```bash
+# Enable charging (drive GPIO 16 LOW)
+sudo pinctrl set 16 op dl
+
+# Disable charging (drive GPIO 16 HIGH)  
+sudo pinctrl set 16 op dh
+
+# Check current GPIO 16 state
+sudo pinctrl get 16
 ```
 
 ## Troubleshooting
@@ -232,7 +243,8 @@ sudo systemctl cat btcups.service
 
 #### Charging Control Not Working
 - Verify GPIO 16 wiring
-- Test different `CHARGE_ENABLE_STATE` values (0 or 1)
+- **Important**: Set `CHARGE_ENABLE_STATE = 0` in your script (LOW enables charging)
+- Test manually: `sudo pinctrl set 16 op dl` (enable) / `sudo pinctrl set 16 op dh` (disable)
 - Check GPIO permissions
 
 ### Testing Shutdown Safely
