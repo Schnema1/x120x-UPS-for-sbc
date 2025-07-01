@@ -6,6 +6,8 @@ For now it is tested with Rpi5 only. But if the pins of your sbc matches the Rpi
 
 It is intended to run with a Bitcoin Fullnode like [raspiblitz](https://github.com/raspiblitz/raspiblitz), [raspibolt](https://github.com/raspibolt/raspibolt/) or other implementations. With lightning enabled you don't want to risk a power loss and get a corrupted database. This script allows you to run some hours without power and if the batteries are close to be empty perform a graceful shutdown. 
 
+This fork is enhanced by AI.
+
 ## Features
 
 - **Battery Monitoring**: Real-time voltage and capacity monitoring using MAX17040/MAX17041 fuel gauge
