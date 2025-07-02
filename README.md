@@ -20,7 +20,7 @@ This fork is enhanced by AI.
 ## Hardware Requirements
 
 - Raspberry Pi 5 (or compatible)
-- Suptronics X120X series UPS board (X1200, X1201, X1202)
+- Geekworm X1200 series UPS board (X1200, X1201, X1202)
 - I2C enabled on Raspberry Pi
 
 ## Installation
@@ -108,6 +108,7 @@ CHARGE_ENABLE_STATE = 0     # GPIO state to enable charging (0 = low/enable, 1 =
 ## Running as a Service
 
 ### 1. Create Service File
+Change path and user according to your needs.
 
 ```bash
 sudo tee /etc/systemd/system/btcups.service > /dev/null <<EOF
@@ -118,8 +119,8 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=root
-ExecStart=/usr/bin/python3 /home/pi/BTCups.py
+User=<you user>
+ExecStart=/usr/bin/python3 /home/<pathToFile>/BTCups.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
