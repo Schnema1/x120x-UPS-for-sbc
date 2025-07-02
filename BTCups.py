@@ -257,7 +257,7 @@ def quick_start_fuel_gauge(bus):
 
 # Ensure only one instance of the script is running
 pid = str(os.getpid())
-pidfile = "/var/run/X1200.pid"
+pidfile = os.path.expanduser("~/.X1200.pid")
 if os.path.isfile(pidfile):
     print("Script already running")
     exit(1)
