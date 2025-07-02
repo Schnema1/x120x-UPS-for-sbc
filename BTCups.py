@@ -7,21 +7,23 @@ import time
 import logging
 import subprocess
 import gpiod
-from subprocess import call
+from subprocess import call, check_output, CalledProcessError
+from pathlib import Path
 
 # User-configurable variables
 SHUTDOWN_THRESHOLD = 3  # Number of consecutive failures required for shutdown
 SLEEP_TIME = 60  # Time in seconds to wait between failure checks
 Loop = False
 
-# Critical voltage threshold for shutdown (combined with AC power loss)
-CRITICAL_VOLTAGE_THRESHOLD = 3.20  # Voltage below which shutdown is triggered when AC is lost
+# Critical thresholds for shutdown
+CRITICAL_VOLTAGE_THRESHOLD = 3.2  # Critical voltage threshold for shutdown (V)
+CRITICAL_CAPACITY_THRESHOLD = 20  # Critical capacity threshold for shutdown (%)
 
 # Charging control variables
 MAX_CHARGE_VOLTAGE = 4.10  # Maximum charging voltage (V)
 CHARGE_RESUME_VOLTAGE = 3.95  # Resume charging below this voltage (V)
 CHARGE_CONTROL_PIN = 16  # GPIO pin to control charging (per Suptronics X120X manual)
-CHARGE_ENABLE_STATE = 0  # GPIO state to enable charging 1 = diasabale (high), 0 = enable (low)
+CHARGE_ENABLE_STATE = 0  # GPIO state to enable charging 1 = disable (high), 0 = enable (low)
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -75,6 +77,131 @@ def get_battery_status(voltage):
     else:
         return "Unknown"
 
+def read_hardware_metric(command_args, strip_chars):
+    """Read hardware metrics using vcgencmd (from qtx120x.py)"""
+    try:
+        output = check_output(command_args).decode("utf-8")
+        metric_str = output.split("=")[1].strip().rstrip(strip_chars)
+        return float(metric_str)
+    except (CalledProcessError, ValueError) as e:
+        logger.error(f"Error reading hardware metric: {e}")
+        return None
+
+def read_cpu_volts():
+    """Return current CPU voltage"""
+    return read_hardware_metric(["vcgencmd", "pmic_read_adc", "VDD_CORE_V"], 'V')
+
+def read_cpu_amps():
+    """Return current CPU amperage"""
+    return read_hardware_metric(["vcgencmd", "pmic_read_adc", "VDD_CORE_A"], 'A')
+
+def read_cpu_temp():
+    """Return current CPU temperature"""
+    return read_hardware_metric(["vcgencmd", "measure_temp"], "'C")
+
+def read_input_voltage():
+    """Return input voltage"""
+    return read_hardware_metric(["vcgencmd", "pmic_read_adc", "EXT5V_V"], 'V')
+
+def get_fan_rpm():
+    """Get fan RPM from system files"""
+    try:
+        sys_devices_path = Path('/sys/devices/platform/cooling_fan') 
+        fan_input_files = list(sys_devices_path.rglob('fan1_input'))
+        if not fan_input_files:
+            return "No fan detected"
+        with open(fan_input_files[0], 'r') as file:
+            rpm = file.read().strip()
+        return f"{rpm} RPM"
+    except FileNotFoundError: 
+        return "Fan RPM file not found"
+    except PermissionError:
+        return "Permission denied accessing fan RPM"
+    except Exception as e:
+        return f"Fan error: {e}"
+
+def power_consumption_watts():
+    """Calculate total system power consumption"""
+    try:
+        output = check_output(['vcgencmd', 'pmic_read_adc']).decode("utf-8")
+        lines = output.split('\n')
+        amperages = {}
+        voltages = {}
+        for line in lines:
+            cleaned_line = line.strip()
+            if cleaned_line:
+                parts = cleaned_line.split(' ')
+                label, value = parts[0], parts[-1]
+                val = float(value.split('=')[1][:-1])
+                short_label = label[:-2]
+                if label.endswith('A'):
+                    amperages[short_label] = val
+                else:
+                    voltages[short_label] = val
+        wattage = sum(amperages[key] * voltages[key] for key in amperages if key in voltages)
+        return wattage
+    except Exception as e:
+        logger.error(f"Error calculating power consumption: {e}")
+        return None
+
+def display_system_stats(voltage, capacity, charging_enabled, ac_power_state):
+    """Display comprehensive system statistics"""
+    # Read additional system metrics
+    cpu_volts = read_cpu_volts()
+    cpu_amps = read_cpu_amps()
+    cpu_temp = read_cpu_temp()
+    input_voltage = read_input_voltage()
+    fan_rpm = get_fan_rpm()
+    pwr_use = power_consumption_watts()
+    
+    # ANSI color codes
+    ORANGE = '\033[38;5;208m'  # Orange color
+    RED_BOLD = '\033[1;31m'    # Red bold
+    GREEN = '\033[32m'         # Green
+    YELLOW = '\033[33m'        # Yellow for warnings
+    RESET = '\033[0m'          # Reset color
+    
+    # Determine charging status
+    charge_status = "enabled" if charging_enabled else "disabled"
+    
+    # Determine power status
+    if ac_power_state == 1:
+        power_status = f"{GREEN}✓ AC Power: OK! ✓\n               ✓ Power Adapter: OK! ✓{RESET}"
+    else:
+        power_status = f"{RED_BOLD}⚠⚠{RESET} {YELLOW}Power Loss OR Power Adapter Failure{RESET} {RED_BOLD}⚠⚠{RESET}"
+    
+    # Format display text with centered headers
+    print("\n" + "="*50)
+    print(f"        {ORANGE}=-=-=-=-=-= X120x Stats =-=-=-=-=-{RESET}")
+    print(f"             UPS Voltage: {RED_BOLD}{voltage:.3f}V{RESET}" if voltage else f"                 UPS Voltage: {RED_BOLD}N/A{RESET}")
+    print(f"             Battery: {RED_BOLD}{capacity:.3f}%{RESET}" if capacity else f"                   Battery: {RED_BOLD}N/A{RESET}")
+    print(f"             Charging: {RED_BOLD}{charge_status}{RESET}")
+    print(f"        {ORANGE}=-=-=-=-=-= RPi5 Stats =-=-=-=-=-{RESET}")
+    print(f"             Input Voltage: {RED_BOLD}{input_voltage:.3f}V{RESET}" if input_voltage else f"               Input Voltage: {RED_BOLD}N/A{RESET}")
+    print(f"             CPU Volts: {RED_BOLD}{cpu_volts:.3f}V{RESET}" if cpu_volts else f"                 CPU Volts: {RED_BOLD}N/A{RESET}")
+    print(f"             CPU Amps: {RED_BOLD}{cpu_amps:.3f}A{RESET}" if cpu_amps else f"                  CPU Amps: {RED_BOLD}N/A{RESET}")
+    print(f"             System Watts: {RED_BOLD}{pwr_use:.3f}W{RESET}" if pwr_use else f"               System Watts: {RED_BOLD}N/A{RESET}")
+    print(f"             CPU Temp: {RED_BOLD}{cpu_temp:.1f}°C{RESET}" if cpu_temp else f"                  CPU Temp: {RED_BOLD}N/A{RESET}")
+    print(f"             Fan RPM: {RED_BOLD}{fan_rpm}{RESET}")
+    print(f"        {ORANGE}=-=-=-=-=-= Charging Control =-=-=-=-=-{RESET}")
+    print(f"             Max Charge Voltage: {RED_BOLD}{MAX_CHARGE_VOLTAGE}V{RESET}")
+    print(f"             Resume Charge Voltage: {RED_BOLD}{CHARGE_RESUME_VOLTAGE}V{RESET}")
+    print(f"             Current Charging State: {RED_BOLD}{charge_status}{RESET}")
+    print(f"        {ORANGE}=-=-=-= ⚡ Power Status ⚡ =-=-=-=-{RESET}")
+    print(f"                 {power_status}")
+    
+    # Add warning status based on power and battery levels
+    if ac_power_state != 1 and capacity and capacity >= 51:
+        print(f"        {RED_BOLD}⚠⚠{RESET} {YELLOW}Running on UPS Backup Power - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+    elif ac_power_state != 1 and capacity and capacity <= 50 and capacity >= 25:
+        print(f"     {RED_BOLD}⚠⚠{RESET} {YELLOW}UPS Power levels approaching critical - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+    elif ac_power_state != 1 and capacity and capacity <= 24 and capacity >= 16:
+        print(f"          {RED_BOLD}⚠⚠{RESET} {YELLOW}UPS Power levels critical - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+    elif ac_power_state != 1 and capacity and capacity <= 15:
+        print(f"        {RED_BOLD}⚠⚠{RESET} {YELLOW}UPS Power failure imminent - Batteries @ {RED_BOLD}{capacity:.2f}%{RESET}")
+    
+    print("="*50 + "\n")
+
 def control_charging(charge_line, voltage, current_charge_state):
     """Control charging based on voltage thresholds"""
     if voltage is None:
@@ -99,11 +226,31 @@ def control_charging(charge_line, voltage, current_charge_state):
         logger.error(f"Error controlling charging: {e}")
         return current_charge_state
 
+def check_critical_conditions(ac_power_state, voltage, capacity):
+    """
+    Check for critical conditions that warrant shutdown.
+    AC power loss alone is not critical - it must be combined with low voltage.
+    """
+    critical_conditions = []
+    
+    # Check for critical voltage (primary shutdown trigger)
+    if voltage is not None and voltage < CRITICAL_VOLTAGE_THRESHOLD:
+        critical_conditions.append(f"critical battery voltage ({voltage:.3f}V < {CRITICAL_VOLTAGE_THRESHOLD}V)")
+    
+    # AC power loss is only critical when combined with critical voltage
+    if ac_power_state == 0 and voltage is not None and voltage < CRITICAL_VOLTAGE_THRESHOLD:
+        critical_conditions.append("AC power loss with critical battery voltage")
+    
+    # Optional: Also check capacity as a secondary condition (uncomment if desired)
+    # if capacity is not None and capacity < CRITICAL_CAPACITY_THRESHOLD:
+    #     critical_conditions.append(f"critical battery capacity ({capacity:.1f}% < {CRITICAL_CAPACITY_THRESHOLD}%)")
+    
+    return critical_conditions
+
 def quick_start_fuel_gauge(bus):
     """Perform quick start on fuel gauge for better initial readings"""
     try:
         bus.write_word_data(address, 6, 0x4000)  # MODE register quick-start command
-        logger.info("Fuel gauge quick-start initiated")
         time.sleep(1)  # Wait for quick-start to complete
     except Exception as e:
         logger.error(f"Error performing quick-start: {e}")
@@ -153,9 +300,9 @@ try:
     quick_start_fuel_gauge(bus)
     
     logger.info("UPS monitoring started")
-    logger.info(f"Charging control: Max voltage {MAX_CHARGE_VOLTAGE}V, Resume voltage {CHARGE_RESUME_VOLTAGE}V")
-    logger.info(f"Shutdown will trigger only when AC power is lost AND voltage drops below {CRITICAL_VOLTAGE_THRESHOLD}V")
-    
+    logger.info(f"Critical voltage threshold: {CRITICAL_VOLTAGE_THRESHOLD}V")
+    logger.info(f"AC power loss will only trigger shutdown when combined with critical voltage")
+        
     while True:
         failure_counter = 0
 
@@ -170,31 +317,24 @@ try:
             if charge_line is not None:
                 charging_enabled = control_charging(charge_line, voltage, charging_enabled)
             
-            # Display status
-            voltage_str = f"{voltage:.3f}V" if voltage is not None else "N/A"
-            capacity_str = f"{capacity:.2f}%" if capacity is not None else "N/A"
-            charge_status = "Enabled" if charging_enabled else "Disabled"
+            # Display comprehensive system statistics
+            display_system_stats(voltage, capacity, charging_enabled, ac_power_state)
             
-            print(f"Capacity: {capacity_str} ({battery_status}), "
-                  f"AC Power: {'Plugged in' if ac_power_state == 1 else 'Unplugged'}, "
-                  f"Voltage: {voltage_str}, "
-                  f"Charging: {charge_status}")
+            # Check for critical conditions using new logic
+            critical_conditions = check_critical_conditions(ac_power_state, voltage, capacity)
             
-            # Modified logic: Only trigger shutdown when BOTH AC power is lost AND voltage is critical
-            if ac_power_state == 0:  # AC power unplugged
-                logger.warning("UPS is unplugged or AC power loss detected.")
-                
-                # Only increment failure counter if voltage is also critical
-                if voltage is not None and voltage < CRITICAL_VOLTAGE_THRESHOLD:
-                    logger.warning(f"CRITICAL: AC power lost AND voltage critical ({voltage:.3f}V < {CRITICAL_VOLTAGE_THRESHOLD}V)")
-                    failure_counter += 1
-                else:
-                    voltage_display = f"{voltage:.3f}V" if voltage is not None else "N/A"
-                    logger.info(f"AC power lost but voltage still safe ({voltage_display}). Continuing on battery power.")
-                    failure_counter = 0  # Reset counter since voltage is still safe
-                    break  # Exit the failure check loop
+            if critical_conditions:
+                for condition in critical_conditions:
+                    logger.warning(f"Critical condition detected: {condition}")
+                failure_counter += 1
             else:
+                # Reset failure counter if no critical conditions
                 failure_counter = 0
+                
+                # Log status for AC power loss without critical conditions
+                if ac_power_state == 0:
+                    logger.info("AC power loss detected, but battery voltage is above critical threshold - continuing operation")
+                
                 break
 
             if failure_counter < SHUTDOWN_THRESHOLD:
@@ -202,7 +342,10 @@ try:
 
         # Handle shutdown conditions
         if failure_counter >= SHUTDOWN_THRESHOLD:
-            shutdown_message = f"CRITICAL SHUTDOWN: AC power lost and battery voltage critically low ({voltage:.3f}V < {CRITICAL_VOLTAGE_THRESHOLD}V) for {SHUTDOWN_THRESHOLD} consecutive checks. Initiating shutdown."
+            critical_conditions = check_critical_conditions(ac_power_state, voltage, capacity)
+            shutdown_reason = "due to: " + ", ".join(critical_conditions)
+
+            shutdown_message = f"Critical conditions met {shutdown_reason}. Initiating shutdown."
             logger.critical(shutdown_message)
             print(shutdown_message)
             
