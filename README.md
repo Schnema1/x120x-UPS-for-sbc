@@ -1,12 +1,19 @@
+
 # Raspberry Pi UPS Monitoring Script
 
-A comprehensive Python script for monitoring and managing Suptronics X120X series UPS boards on Raspberry Pi 5. This script provides battery monitoring, charging control, and automatic safe shutdown functionality. It is a fork of the original repo [suptronics](https://github.com/suptronics/x120x.git)
+This project provides two Python scripts for monitoring and managing Suptronics X120X series UPS boards on Raspberry Pi 5:
 
-For now it is tested with Rpi5 only. But if the pins of your sbc matches the Rpi5 layout you should be good to go.
+- **BTCups.py**: For manual operation and testing. Run this script directly for single checks or interactive monitoring. Recommended for initial setup, troubleshooting, or development.
+- **BTCupsSystemd.py**: Optimized for continuous, unattended operation as a systemd service. Use this script for automatic startup and safe shutdown in production environments.
 
-It is intended to run with a Bitcoin Fullnode like [raspiblitz](https://github.com/raspiblitz/raspiblitz), [raspibolt](https://github.com/raspibolt/raspibolt/) or other implementations. With lightning enabled you don't want to risk a power loss and get a corrupted database. This script allows you to run some hours without power and if the batteries are close to be empty perform a graceful shutdown. 
+Both scripts provide battery monitoring, charging control, and automatic safe shutdown functionality. This is a fork of the original repo [suptronics](https://github.com/suptronics/x120x.git).
+
+Tested with Rpi5 only. If your SBC matches the Rpi5 pin layout, it should work as well.
+
+Intended for use with Bitcoin Fullnode projects like [raspiblitz](https://github.com/raspiblitz/raspiblitz), [raspibolt](https://github.com/raspibolt/raspibolt/) or similar. With lightning enabled, you don't want to risk a power loss and get a corrupted database. This script allows you to run some hours without power and, if the batteries are close to empty, perform a graceful shutdown.
 
 This fork is enhanced by AI.
+
 
 ## Features
 
@@ -15,13 +22,14 @@ This fork is enhanced by AI.
 - **Power Loss Detection**: Monitors AC power status via GPIO
 - **Safe Shutdown**: Automatic shutdown on critical battery conditions
 - **Logging**: Comprehensive logging with configurable levels
-- **Service Integration**: Can run as a systemd service for automatic startup
+- **Service Integration**: BTCupsSystemd.py can run as a systemd service for automatic startup
 
 ## Hardware Requirements
 
 - Raspberry Pi 5 (or compatible)
 - Geekworm X1200 series UPS board (X1200, X1201, X1202)
 - I2C enabled on Raspberry Pi
+
 
 ## Installation
 
@@ -46,27 +54,22 @@ sudo i2cdetect -y 1
 
 ```bash
 # Make script executable
-chmod +x BTCups.py
+chmod +x BTCups.py BTCupsSystemd.py
 
-# Test run (recommended first)
+# Test run BTCups.py (recommended for manual or initial setup)
 sudo python3 BTCups.py
 ```
 
 ### 3. Configure for Continuous Operation
 
-Edit the script to enable continuous monitoring:
+For production use, run BTCupsSystemd.py as a systemd service. See below for service setup instructions.
 
-```python
-# In BTCups.py, change:
-Loop = False  # to:
-Loop = True
-```
 
 ## Configuration
 
 ### Safety Thresholds
 
-Modify these variables in `BTCups.py` based on your requirements:
+Modify these variables in `BTCups.py` or `BTCupsSystemd.py` based on your requirements:
 
 #### Conservative Settings (Safer, Earlier Shutdown)
 ```python
@@ -105,10 +108,11 @@ CHARGE_ENABLE_STATE = 0     # GPIO state to enable charging (0 = low/enable, 1 =
 - `sudo pinctrl set 16 op dl` (drive low) **enables** charging
 - `sudo pinctrl set 16 op dh` (drive high) **disables** charging
 
+
 ## Running as a Service
 
 ### 1. Create Service File
-Change path and user according to your needs.
+Change path and user according to your needs. **Use BTCupsSystemd.py for systemd!**
 
 ```bash
 sudo tee /etc/systemd/system/btcups.service > /dev/null <<EOF
@@ -119,8 +123,8 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=<you user>
-ExecStart=/usr/bin/python3 /home/<pathToFile>/BTCups.py
+User=<your user>
+ExecStart=/usr/bin/python3 /home/<pathToFile>/BTCupsSystemd.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -163,9 +167,10 @@ sudo systemctl restart btcups.service
 sudo systemctl disable btcups.service
 ```
 
+
 ## Usage
 
-### Manual Operation
+### Manual Operation (BTCups.py)
 
 ```bash
 # Single check and exit
@@ -175,25 +180,15 @@ sudo python3 BTCups.py
 sudo python3 BTCups.py
 ```
 
-### Expected Output
+### Service Operation (BTCupsSystemd.py)
 
-```
-Capacity: 85.23% (High), AC Power: Plugged in, Voltage: 3.856V, Charging: Enabled
-Capacity: 84.87% (High), AC Power: Plugged in, Voltage: 3.854V, Charging: Enabled
-```
+Once enabled, BTCupsSystemd.py will run automatically in the background and handle UPS monitoring and shutdown as needed. Use systemctl and journalctl to manage and view logs.
 
-### During Power Loss
 
-```
-Capacity: 78.45% (High), AC Power: Unplugged, Voltage: 3.812V, Charging: Disabled
-WARNING - UPS is unplugged or AC power loss detected.
-```
+### Output
 
-### Critical Shutdown
-
-```
-CRITICAL - Critical condition met due to critical battery level. Initiating shutdown.
-```
+- **BTCups.py**: Prints status and warnings to the console for manual review.
+- **BTCupsSystemd.py**: Logs all status and warnings to the system journal (view with `journalctl -u btcups.service -f`).
 
 ## GPIO Pin Configuration
 
