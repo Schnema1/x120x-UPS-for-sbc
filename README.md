@@ -15,7 +15,7 @@ Tested with Rpi5 only. If your SBC matches the Rpi5 pin layout, it should work a
 
 Intended for use with Bitcoin Fullnode projects like [raspiblitz](https://github.com/raspiblitz/raspiblitz), [raspibolt](https://github.com/raspibolt/raspibolt/) or similar. With lightning enabled, you don't want to risk a power loss and get a corrupted database. This script allows you to run some hours without power and, if the batteries are close to empty, perform a graceful shutdown.
 
-This fork is enhanced by AI.
+**This fork is enhanced by AI.**
 
 ## Features
 
@@ -60,6 +60,12 @@ sudo i2cdetect -y 1
 ### 2. Download and Setup Script
 
 ```bash
+# Download the script
+wget https://github.com/Schnema1/x120x-UPS-for-sbc/blob/main/BTCupsSystemd.py
+# or
+wget 
+https://github.com/Schnema1/x120x-UPS-for-sbc/blob/main/BTCups.py
+
 # Make script executable
 chmod +x BTCups.py BTCupsSystemd.py
 
@@ -79,7 +85,7 @@ Modify these variables in `BTCups.py` or `BTCupsSystemd.py` based on your requir
 
 #### Conservative Settings (Safer, Earlier Shutdown)
 ```python
-SHUTDOWN_THRESHOLD = 2      # Fewer failures needed (faster response)
+SHUTDOWN_THRESHOLD = 2     # Fewer failures needed (faster response)
 SLEEP_TIME = 30            # Check more frequently
 CRITICAL_CAPACITY = 25     # Shutdown at 25% instead of 20%
 CRITICAL_VOLTAGE = 3.30    # Shutdown at 3.30V instead of 3.20V
@@ -87,7 +93,7 @@ CRITICAL_VOLTAGE = 3.30    # Shutdown at 3.30V instead of 3.20V
 
 #### Moderate Settings (Balanced - Default)
 ```python
-SHUTDOWN_THRESHOLD = 3      # Default setting
+SHUTDOWN_THRESHOLD = 3     # Default setting
 SLEEP_TIME = 60            # Default setting
 CRITICAL_CAPACITY = 20     # Default setting  
 CRITICAL_VOLTAGE = 3.20    # Default setting
@@ -95,7 +101,7 @@ CRITICAL_VOLTAGE = 3.20    # Default setting
 
 #### Aggressive Settings (Maximum Runtime, Higher Risk)
 ```python
-SHUTDOWN_THRESHOLD = 5      # More failures needed (slower response)
+SHUTDOWN_THRESHOLD = 5     # More failures needed (slower response)
 SLEEP_TIME = 90            # Check less frequently
 CRITICAL_CAPACITY = 15     # Run battery lower
 CRITICAL_VOLTAGE = 3.10    # Run voltage lower (risky for Li-ion)
@@ -105,7 +111,7 @@ CRITICAL_VOLTAGE = 3.10    # Run voltage lower (risky for Li-ion)
 
 ```python
 MAX_CHARGE_VOLTAGE = 4.10   # Maximum charging voltage (V)
-CHARGE_RESUME_VOLTAGE = 4.05 # Resume charging below this voltage (V)
+CHARGE_RESUME_VOLTAGE = 3.9 # Resume charging below this voltage (V)
 CHARGE_CONTROL_PIN = 16     # GPIO pin to control charging
 CHARGE_ENABLE_STATE = 0     # GPIO state to enable charging (0 = low/enable, 1 = high/disable)
 ```
@@ -117,7 +123,7 @@ CHARGE_ENABLE_STATE = 0     # GPIO state to enable charging (0 = low/enable, 1 =
 ## Running as a Service
 
 ### 1. Create Service File
-Change path and user according to your needs. **Use BTCupsSystemd.py for systemd!**
+**Change path** and user according to your needs. **Use BTCupsSystemd.py for systemd!**
 
 ```bash
 sudo tee /etc/systemd/system/btcups.service > /dev/null <<EOF
@@ -225,6 +231,7 @@ sudo pinctrl get 16
 sudo i2cdetect -y 1
 
 # If 0x36 not shown, clean GPIO contacts and reconnect UPS
+# Make sure the pogo pins fit the GIPO Pins smoothly
 ```
 
 #### Permission Errors
