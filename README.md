@@ -1,10 +1,13 @@
-
 # Raspberry Pi UPS Monitoring Script
 
 This project provides two Python scripts for monitoring and managing Suptronics X120X series UPS boards on Raspberry Pi 5:
 
-- **BTCups.py**: For manual operation and testing. Run this script directly for single checks or interactive monitoring. Recommended for initial setup, troubleshooting, or development.
-- **BTCupsSystemd.py**: Optimized for continuous, unattended operation as a systemd service. Use this script for automatic startup and safe shutdown in production environments.
+- **BTCups.py**: Intended for **manual operation, testing, and troubleshooting**. Run this script directly for single checks or interactive monitoring. Recommended for initial setup, diagnostics, or development. Output is printed to the console.
+- **BTCupsSystemd.py**: Designed for **continuous, unattended operation as a systemd service**. Use this script for automatic startup and safe shutdown in production environments. All output is logged (not printed) and is suitable for background/system use.
+
+> **Summary:**  
+> Use `BTCups.py` for manual checks and debugging.  
+> Use `BTCupsSystemd.py` for 24/7 monitoring as a background service (systemd).
 
 Both scripts provide battery monitoring, charging control, and automatic safe shutdown functionality. This is a fork of the original repo [suptronics](https://github.com/suptronics/x120x.git).
 
@@ -13,7 +16,6 @@ Tested with Rpi5 only. If your SBC matches the Rpi5 pin layout, it should work a
 Intended for use with Bitcoin Fullnode projects like [raspiblitz](https://github.com/raspiblitz/raspiblitz), [raspibolt](https://github.com/raspibolt/raspibolt/) or similar. With lightning enabled, you don't want to risk a power loss and get a corrupted database. This script allows you to run some hours without power and, if the batteries are close to empty, perform a graceful shutdown.
 
 This fork is enhanced by AI.
-
 
 ## Features
 
@@ -30,21 +32,26 @@ This fork is enhanced by AI.
 - Geekworm X1200 series UPS board (X1200, X1201, X1202)
 - I2C enabled on Raspberry Pi
 
-
 ## Installation
 
 ### 1. Prerequisites
 
-Enable I2C and install required packages:
+Enable I2C and install required Python libraries:
 
 ```bash
-# Enable I2C
+# Enable I2C interface
 sudo raspi-config
 # Navigate to: Interfacing Options > I2C > Enable
 
-# Install required Python packages
+# Install required system packages
 sudo apt update
-sudo apt install python3-smbus2 python3-gpiod
+sudo apt install python3-pip python3-smbus2 python3-gpiod i2c-tools
+
+# (Optional) Upgrade pip
+python3 -m pip install --upgrade pip
+
+# Install any missing Python libraries via pip (if needed)
+python3 -m pip install smbus2 gpiod
 
 # Verify I2C connection (should show device at 0x36)
 sudo i2cdetect -y 1
@@ -63,7 +70,6 @@ sudo python3 BTCups.py
 ### 3. Configure for Continuous Operation
 
 For production use, run BTCupsSystemd.py as a systemd service. See below for service setup instructions.
-
 
 ## Configuration
 
@@ -107,7 +113,6 @@ CHARGE_ENABLE_STATE = 0     # GPIO state to enable charging (0 = low/enable, 1 =
 **Important**: According to the Suptronics manual:
 - `sudo pinctrl set 16 op dl` (drive low) **enables** charging
 - `sudo pinctrl set 16 op dh` (drive high) **disables** charging
-
 
 ## Running as a Service
 
@@ -167,7 +172,6 @@ sudo systemctl restart btcups.service
 sudo systemctl disable btcups.service
 ```
 
-
 ## Usage
 
 ### Manual Operation (BTCups.py)
@@ -183,7 +187,6 @@ sudo python3 BTCups.py
 ### Service Operation (BTCupsSystemd.py)
 
 Once enabled, BTCupsSystemd.py will run automatically in the background and handle UPS monitoring and shutdown as needed. Use systemctl and journalctl to manage and view logs.
-
 
 ### Output
 
@@ -248,6 +251,20 @@ sudo systemctl cat btcups.service
 - Test manually: `sudo pinctrl set 16 op dl` (enable) / `sudo pinctrl set 16 op dh` (disable)
 - Check GPIO permissions
 
+### Reading Logs
+
+- **With systemd/journalctl** (recommended):  
+  ```bash
+  sudo journalctl -u btcups.service -f
+  ```
+- **If logging to a file is configured** (edit the script to use `logging.FileHandler`):  
+  Check the specified log file, e.g.:
+  ```bash
+  tail -f /var/log/btcups.log
+  ```
+- **For manual runs (BTCups.py)**:  
+  Output is printed directly to the terminal.
+
 ### Testing Shutdown Safely
 
 For testing, comment out the actual shutdown command:
@@ -265,7 +282,7 @@ print("TEST MODE: Shutdown would occur here")
 ## Safety Features
 
 - **Multiple Failure Threshold**: Requires consecutive failures before shutdown
-- **Graceful Cleanup**: Properly releases GPIO resources and removes PID file
+- **Graceful Cleanup**: Properly releases GPIO resources
 - **Charging Protection**: Prevents overcharging with voltage monitoring
 - **Comprehensive Logging**: All events logged with timestamps
 - **Error Handling**: Continues operation even with sensor read failures
