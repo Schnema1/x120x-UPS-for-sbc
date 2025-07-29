@@ -19,7 +19,7 @@ CRITICAL_CAPACITY_THRESHOLD = 20  # Critical capacity threshold for shutdown (%)
 
 # Charging control variables
 MAX_CHARGE_VOLTAGE = 4.10  # Maximum charging voltage (V)
-CHARGE_RESUME_VOLTAGE = 3.95  # Resume charging below this voltage (V)
+CHARGE_RESUME_VOLTAGE = 3.9  # Resume charging below this voltage (V)
 CHARGE_CONTROL_PIN = 16  # GPIO pin to control charging (per Suptronics X120X manual)
 CHARGE_ENABLE_STATE = 0  # GPIO state to enable charging 1 = disable (high), 0 = enable (low)
 
