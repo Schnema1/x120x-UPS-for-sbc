@@ -1,11 +1,9 @@
 #!/usr/bin/python3
 
-import os
 import struct
 import smbus2
 import time
 import logging
-import subprocess
 import gpiod
 from subprocess import call, check_output, CalledProcessError
 from pathlib import Path
@@ -13,7 +11,7 @@ from pathlib import Path
 # User-configurable variables
 SHUTDOWN_THRESHOLD = 3  # Number of consecutive failures required for shutdown
 SLEEP_TIME = 60  # Time in seconds to wait between failure checks
-Loop = False
+Loop = True  # Always loop for systemd service
 
 # Critical thresholds for shutdown
 CRITICAL_VOLTAGE_THRESHOLD = 3.2  # Critical voltage threshold for shutdown (V)
@@ -29,7 +27,7 @@ CHARGE_ENABLE_STATE = 0  # GPIO state to enable charging 1 = disable (high), 0 =
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def readVoltage(bus):
+def readVoltage(bus, address):
     """Read battery voltage from MAX17040/MAX17041"""
     try:
         read = bus.read_word_data(address, 2)  # VCELL register
@@ -40,7 +38,7 @@ def readVoltage(bus):
         logger.error(f"Error reading voltage: {e}")
         return None
 
-def readCapacity(bus):
+def readCapacity(bus, address):
     """Read battery capacity from MAX17040/MAX17041"""
     try:
         read = bus.read_word_data(address, 4)  # SOC register
@@ -49,15 +47,6 @@ def readCapacity(bus):
         return capacity
     except Exception as e:
         logger.error(f"Error reading capacity: {e}")
-        return None
-
-def readRawVoltage(bus):
-    """Read raw voltage register value for debugging"""
-    try:
-        read = bus.read_word_data(address, 2)
-        return read
-    except Exception as e:
-        logger.error(f"Error reading raw voltage: {e}")
         return None
 
 def get_battery_status(voltage):
@@ -78,33 +67,28 @@ def get_battery_status(voltage):
         return "Unknown"
 
 def read_hardware_metric(command_args, strip_chars):
-    """Read hardware metrics using vcgencmd (from qtx120x.py)"""
+    """Read hardware metrics using vcgencmd"""
     try:
         output = check_output(command_args).decode("utf-8")
         metric_str = output.split("=")[1].strip().rstrip(strip_chars)
         return float(metric_str)
-    except (CalledProcessError, ValueError) as e:
+    except (CalledProcessError, ValueError, IndexError) as e:
         logger.error(f"Error reading hardware metric: {e}")
         return None
 
 def read_cpu_volts():
-    """Return current CPU voltage"""
     return read_hardware_metric(["vcgencmd", "pmic_read_adc", "VDD_CORE_V"], 'V')
 
 def read_cpu_amps():
-    """Return current CPU amperage"""
     return read_hardware_metric(["vcgencmd", "pmic_read_adc", "VDD_CORE_A"], 'A')
 
 def read_cpu_temp():
-    """Return current CPU temperature"""
     return read_hardware_metric(["vcgencmd", "measure_temp"], "'C")
 
 def read_input_voltage():
-    """Return input voltage"""
     return read_hardware_metric(["vcgencmd", "pmic_read_adc", "EXT5V_V"], 'V')
 
 def get_fan_rpm():
-    """Get fan RPM from system files"""
     try:
         sys_devices_path = Path('/sys/devices/platform/cooling_fan') 
         fan_input_files = list(sys_devices_path.rglob('fan1_input'))
@@ -121,7 +105,6 @@ def get_fan_rpm():
         return f"Fan error: {e}"
 
 def power_consumption_watts():
-    """Calculate total system power consumption"""
     try:
         output = check_output(['vcgencmd', 'pmic_read_adc']).decode("utf-8")
         lines = output.split('\n')
@@ -145,7 +128,6 @@ def power_consumption_watts():
         return None
 
 def log_system_stats(voltage, capacity, charging_enabled, ac_power_state):
-    """Log system statistics for systemd service"""
     cpu_volts = read_cpu_volts()
     cpu_amps = read_cpu_amps()
     cpu_temp = read_cpu_temp()
@@ -169,160 +151,117 @@ def log_system_stats(voltage, capacity, charging_enabled, ac_power_state):
             logger.critical(f"UPS Power failure imminent - Batteries @ {capacity:.2f}%")
 
 def control_charging(charge_line, voltage, current_charge_state):
-    """Control charging based on voltage thresholds"""
     if voltage is None:
         logger.warning("Cannot control charging - voltage reading failed")
         return current_charge_state
-    
     try:
         if voltage >= MAX_CHARGE_VOLTAGE and current_charge_state:
-            # Stop charging if voltage too high
             charge_line.set_value(1 - CHARGE_ENABLE_STATE)  # Disable charging
             logger.info(f"CHARGING STOPPED - Voltage {voltage:.3f}V >= {MAX_CHARGE_VOLTAGE}V")
             return False
         elif voltage <= CHARGE_RESUME_VOLTAGE and not current_charge_state:
-            # Resume charging if voltage dropped sufficiently
             charge_line.set_value(CHARGE_ENABLE_STATE)  # Enable charging
             logger.info(f"CHARGING RESUMED - Voltage {voltage:.3f}V <= {CHARGE_RESUME_VOLTAGE}V")
             return True
         else:
-            # No change needed
             return current_charge_state
     except Exception as e:
         logger.error(f"Error controlling charging: {e}")
         return current_charge_state
 
 def check_critical_conditions(ac_power_state, voltage, capacity):
-    """
-    Check for critical conditions that warrant shutdown.
-    AC power loss alone is not critical - it must be combined with low voltage.
-    """
     critical_conditions = []
-    
-    # Check for critical voltage (primary shutdown trigger)
     if voltage is not None and voltage < CRITICAL_VOLTAGE_THRESHOLD:
         critical_conditions.append(f"critical battery voltage ({voltage:.3f}V < {CRITICAL_VOLTAGE_THRESHOLD}V)")
-    
-    # AC power loss is only critical when combined with critical voltage
     if ac_power_state == 0 and voltage is not None and voltage < CRITICAL_VOLTAGE_THRESHOLD:
         critical_conditions.append("AC power loss with critical battery voltage")
-    
-    # Optional: Also check capacity as a secondary condition (uncomment if desired)
+    # Optionally check capacity as a secondary condition
     # if capacity is not None and capacity < CRITICAL_CAPACITY_THRESHOLD:
     #     critical_conditions.append(f"critical battery capacity ({capacity:.1f}% < {CRITICAL_CAPACITY_THRESHOLD}%)")
-    
     return critical_conditions
 
-def quick_start_fuel_gauge(bus):
-    """Perform quick start on fuel gauge for better initial readings"""
+def quick_start_fuel_gauge(bus, address):
     try:
         bus.write_word_data(address, 6, 0x4000)  # MODE register quick-start command
-        time.sleep(1)  # Wait for quick-start to complete
+        time.sleep(1)
     except Exception as e:
         logger.error(f"Error performing quick-start: {e}")
 
-# Ensure only one instance of the script is running
-pid = str(os.getpid())
-pidfile = os.path.expanduser("~/.X1200.pid")
-if os.path.isfile(pidfile):
-    print("Script already running")
-    exit(1)
-else:
-    with open(pidfile, 'w') as f:
-        f.write(pid)
-
-# Initialize variables
-charging_enabled = True  # Assume charging starts enabled
+# Main logic
+charging_enabled = True
 bus = None
 chip = None
 pld_line = None
 charge_line = None
 
 try:
-    # Initialize I2C bus
     bus = smbus2.SMBus(1)
     address = 0x36
-    
-    # Initialize GPIO
+
     PLD_PIN = 6
     chip = gpiod.Chip('gpiochip0')
-    
-    # Power loss detection pin
+
     pld_line = chip.get_line(PLD_PIN)
     pld_line.request(consumer="PLD", type=gpiod.LINE_REQ_DIR_IN)
-    
-    # Charging control pin
+
     try:
         charge_line = chip.get_line(CHARGE_CONTROL_PIN)
         charge_line.request(consumer="CHARGE_CTRL", type=gpiod.LINE_REQ_DIR_OUT)
-        charge_line.set_value(CHARGE_ENABLE_STATE)  # Start with charging enabled
+        charge_line.set_value(CHARGE_ENABLE_STATE)
         logger.info(f"Charging control initialized on GPIO {CHARGE_CONTROL_PIN}")
     except Exception as e:
         logger.warning(f"Could not initialize charging control on GPIO {CHARGE_CONTROL_PIN}: {e}")
         logger.warning("Continuing without charging control")
         charge_line = None
-    
-    # Perform initial fuel gauge quick-start for better accuracy
-    quick_start_fuel_gauge(bus)
-    
+
+    quick_start_fuel_gauge(bus, address)
+
     logger.info("UPS monitoring started")
     logger.info(f"Critical voltage threshold: {CRITICAL_VOLTAGE_THRESHOLD}V")
     logger.info(f"AC power loss will only trigger shutdown when combined with critical voltage")
-        
+
     while True:
         failure_counter = 0
 
         for _ in range(SHUTDOWN_THRESHOLD):
-            # Read sensor values
             ac_power_state = pld_line.get_value()
-            voltage = readVoltage(bus)
-            capacity = readCapacity(bus)
+            voltage = readVoltage(bus, address)
+            capacity = readCapacity(bus, address)
             battery_status = get_battery_status(voltage)
-            
-            # Control charging if charge control is available
+
             if charge_line is not None:
                 charging_enabled = control_charging(charge_line, voltage, charging_enabled)
-            
-            # Display comprehensive system statistics
+
             log_system_stats(voltage, capacity, charging_enabled, ac_power_state)
-            
-            # Check for critical conditions using new logic
+
             critical_conditions = check_critical_conditions(ac_power_state, voltage, capacity)
-            
+
             if critical_conditions:
                 for condition in critical_conditions:
                     logger.warning(f"Critical condition detected: {condition}")
                 failure_counter += 1
             else:
-                # Reset failure counter if no critical conditions
                 failure_counter = 0
-                
-                # Log status for AC power loss without critical conditions
                 if ac_power_state == 0:
                     logger.info("AC power loss detected, but battery voltage is above critical threshold - continuing operation")
-                
                 break
 
             if failure_counter < SHUTDOWN_THRESHOLD:
                 time.sleep(SLEEP_TIME)
 
-        # Handle shutdown conditions
         if failure_counter >= SHUTDOWN_THRESHOLD:
             critical_conditions = check_critical_conditions(ac_power_state, voltage, capacity)
             shutdown_reason = "due to: " + ", ".join(critical_conditions)
-
             shutdown_message = f"Critical conditions met {shutdown_reason}. Initiating shutdown."
             logger.critical(shutdown_message)
-            print(shutdown_message)
-            
-            # Disable charging before shutdown
+
             if charge_line is not None:
                 try:
                     charge_line.set_value(1 - CHARGE_ENABLE_STATE)
                     logger.info("Charging disabled before shutdown")
                 except Exception as e:
                     logger.error(f"Error disabling charging before shutdown: {e}")
-            
+
             call("sudo nohup shutdown -h now", shell=True)
         else:
             if Loop:
@@ -336,24 +275,19 @@ except KeyboardInterrupt:
 except Exception as e:
     logger.error(f"Unexpected error: {e}")
 finally:
-    # Cleanup
     if charge_line is not None:
         try:
             charge_line.release()
-        except:
+        except Exception:
             pass
     if pld_line is not None:
         try:
             pld_line.release()
-        except:
+        except Exception:
             pass
     if chip is not None:
         try:
             chip.close()
-        except:
+        except Exception:
             pass
-    if os.path.isfile(pidfile):
-        os.unlink(pidfile)
-    
     logger.info("UPS monitoring stopped")
-    exit(0)
