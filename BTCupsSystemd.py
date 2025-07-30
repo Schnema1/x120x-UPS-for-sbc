@@ -151,6 +151,7 @@ def log_system_stats(voltage, capacity, charging_enabled, ac_power_state):
             logger.critical(f"UPS Power failure imminent - Batteries @ {capacity:.2f}%")
 
 def control_charging(charge_line, voltage, current_charge_state):
+    hysteresis = 0.05  # Voltage buffer to prevent frequent toggling
     if voltage is None:
         logger.warning("Cannot control charging - voltage reading failed")
         return current_charge_state
@@ -159,9 +160,13 @@ def control_charging(charge_line, voltage, current_charge_state):
             charge_line.set_value(1 - CHARGE_ENABLE_STATE)  # Disable charging
             logger.info(f"CHARGING STOPPED - Voltage {voltage:.3f}V >= {MAX_CHARGE_VOLTAGE}V")
             return False
-        elif voltage <= CHARGE_RESUME_VOLTAGE and not current_charge_state:
+        elif voltage <= (CHARGE_RESUME_VOLTAGE - hysteresis) and not current_charge_state:
             charge_line.set_value(CHARGE_ENABLE_STATE)  # Enable charging
-            logger.info(f"CHARGING RESUMED - Voltage {voltage:.3f}V <= {CHARGE_RESUME_VOLTAGE}V")
+            logger.info(f"CHARGING RESUMED - Voltage {voltage:.3f}V <= {CHARGE_RESUME_VOLTAGE - hysteresis}V")
+            return True
+        elif current_charge_state and voltage < MAX_CHARGE_VOLTAGE:
+            # Ensure charging continues until MAX_CHARGE_VOLTAGE is reached
+            logger.info(f"CHARGING CONTINUING - Voltage {voltage:.3f}V < {MAX_CHARGE_VOLTAGE}V")
             return True
         else:
             return current_charge_state
