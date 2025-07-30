@@ -15,6 +15,9 @@ Tested with Rpi5 only. If your SBC matches the Rpi5 pin layout, it should work a
 
 Intended for use with Bitcoin Fullnode projects like [raspiblitz](https://github.com/raspiblitz/raspiblitz), [raspibolt](https://github.com/raspibolt/raspibolt/) or similar. With lightning enabled, you don't want to risk a power loss and get a corrupted database. This script allows you to run some hours without power and, if the batteries are close to empty, perform a graceful shutdown.
 
+**Open Points**
+Once the desired voltage is reached, the script stops charging. However, as long the charger is plugged in, there is still kind of charge happening.
+
 **This fork is enhanced by AI.**
 
 ## Features
