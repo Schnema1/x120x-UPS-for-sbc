@@ -19,7 +19,7 @@ CRITICAL_CAPACITY_THRESHOLD = 20  # Critical capacity threshold for shutdown (%)
 
 # Charging control variables
 MAX_CHARGE_VOLTAGE = 4.10  # Maximum charging voltage (V)
-CHARGE_RESUME_VOLTAGE = 3.9  # Resume charging below this voltage (V)
+CHARGE_RESUME_VOLTAGE = 3.89  # Resume charging below this voltage (V)
 CHARGE_CONTROL_PIN = 16  # GPIO pin to control charging (per Suptronics X120X manual)
 CHARGE_ENABLE_STATE = 0  # GPIO state to enable charging 1 = disable (high), 0 = enable (low)
 
@@ -33,6 +33,7 @@ def readVoltage(bus, address):
         read = bus.read_word_data(address, 2)  # VCELL register
         swapped = struct.unpack("<H", struct.pack(">H", read))[0]  # big endian to little endian
         voltage = swapped * 1.25 / 1000 / 16  # convert to voltage (MAX17040: 1.25mV resolution)
+        #logger.debug(f"Raw voltage data: {read}, Swapped: {swapped}, Calculated Voltage: {voltage}")
         return voltage
     except Exception as e:
         logger.error(f"Error reading voltage: {e}")
@@ -142,11 +143,11 @@ def log_system_stats(voltage, capacity, charging_enabled, ac_power_state):
     logger.info(f"UPS Voltage: {voltage if voltage else 'N/A'} V, Battery: {capacity if capacity else 'N/A'} %, Charging: {charge_status}, Input Voltage: {input_voltage if input_voltage else 'N/A'} V, CPU Volts: {cpu_volts if cpu_volts else 'N/A'} V, CPU Amps: {cpu_amps if cpu_amps else 'N/A'} A, System Watts: {pwr_use if pwr_use else 'N/A'} W, CPU Temp: {cpu_temp if cpu_temp else 'N/A'} C, Fan RPM: {fan_rpm}, Power Status: {power_status}")
     if ac_power_state != 1 and capacity:
         if capacity >= 51:
-            logger.warning(f"Running on UPS Backup Power - Batteries @ {capacity:.2f}%")
+            logger.warning(f"Running on UPS Backup Power - Batteries @ {capacity:.2f}% - Voltage @ {voltage if voltage else 'N/A'} V")
         elif 25 <= capacity <= 50:
-            logger.warning(f"UPS Power levels approaching critical - Batteries @ {capacity:.2f}%")
+            logger.warning(f"UPS Power levels approaching critical - Batteries @ {capacity:.2f}% - Voltage @ {voltage if voltage else 'N/A'} V")
         elif 16 <= capacity <= 24:
-            logger.warning(f"UPS Power levels critical - Batteries @ {capacity:.2f}%")
+            logger.warning(f"UPS Power levels critical - Batteries @ {capacity:.2f}% - Voltage @ {voltage if voltage else 'N/A'} V")
         elif capacity <= 15:
             logger.critical(f"UPS Power failure imminent - Batteries @ {capacity:.2f}%")
 
@@ -169,6 +170,7 @@ def control_charging(charge_line, voltage, current_charge_state):
             logger.info(f"CHARGING CONTINUING - Voltage {voltage:.3f}V < {MAX_CHARGE_VOLTAGE}V")
             return True
         else:
+            #logger.debug(f"No change in charging state. Voltage: {voltage:.3f}V, Current State: {current_charge_state}")
             return current_charge_state
     except Exception as e:
         logger.error(f"Error controlling charging: {e}")
